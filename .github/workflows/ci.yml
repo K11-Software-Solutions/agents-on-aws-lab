@@ -21,7 +21,7 @@ concurrency:
 env:
   TF_VERSION: "1.17.2"
   HELM_VERSION: "v4.3.2"
-  LAB7_REF: "d569c15"
+  LAB7_REF: "d569c15ec521f86058e8d67a2a95815f297094d6"   # lab 7 at d569c15; checkout needs the full SHA
   PYTHONIOENCODING: utf-8
 
 jobs:
