@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software or its articles, please cite it as below."
+type: software
+title: "Agents on AWS Lab"
+abstract: "Lab 8 of an AI Engineering curriculum: Terraform for a private-node EKS cluster with KMS-encrypted secrets and audit logs, IRSA with a least-privilege role trusted by one service account, S3, ECR and Secrets Manager; a hardened Helm chart with probes, autoscaling, disruption budgets, network policy and render-time guards; infrastructure tests with a mocked AWS provider and negative controls; and a kind-cluster deployment in CI gated by the previous lab's eval and promotion gates."
+authors:
+  - family-names: Jadhav
+    given-names: Kavita
+    affiliation: K11 Software Solutions
+repository-code: "https://github.com/K11-Software-Solutions/agents-on-aws-lab"
+url: "https://github.com/K11-Software-Solutions/agents-on-aws-lab"
+version: "1.0.0"
+license:
+  - MIT
+  - CC-BY-4.0
+keywords:
+  - ai-engineering
+  - aws
+  - eks
+  - terraform
+  - helm
+  - kubernetes
+  - irsa
+  - infrastructure-testing
+# After the first Zenodo release, add the concept DOI:
+# identifiers:
+#   - type: doi
+#     value: "10.5281/zenodo.XXXXXXX"
+#     description: Concept DOI (all versions)

@@ -1,0 +1,9 @@
+{
+  "title": "Agents on AWS Lab",
+  "description": "Lab 8 of an AI Engineering curriculum: Terraform for a private-node EKS cluster with KMS-encrypted secrets and audit logs, IRSA with a least-privilege role trusted by one service account, S3, ECR and Secrets Manager; a hardened Helm chart with probes, autoscaling, disruption budgets, network policy and render-time guards; infrastructure tests with a mocked AWS provider and negative controls; and a kind-cluster deployment in CI gated by the previous lab's eval and promotion gates.",
+  "upload_type": "software",
+  "creators": [{"name": "Jadhav, Kavita", "affiliation": "K11 Software Solutions"}],
+  "license": "MIT",
+  "keywords": ["ai-engineering", "aws", "eks", "terraform", "helm", "kubernetes", "irsa", "infrastructure-testing"],
+  "notes": "Code is licensed under MIT; the written material (articles/) is licensed under CC BY 4.0. Kestrel Labs is fictional. No AWS resources were created to produce this lab; see the README for what is and is not verified."
+}

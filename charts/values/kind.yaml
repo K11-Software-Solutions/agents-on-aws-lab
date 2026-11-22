@@ -1,0 +1,10 @@
+# Values for the local kind cluster in CI: the fake provider, a locally loaded image, no AWS.
+image:
+  repository: kestrel-agents
+  tag: ci
+  pullPolicy: Never
+autoscaling:
+  enabled: false
+replicaCount: 2
+networkPolicy:
+  enabled: false        # kind's default CNI does not enforce NetworkPolicy

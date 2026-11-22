@@ -1,0 +1,12 @@
+# Example production values for EKS. Replace the placeholders with terraform outputs.
+image:
+  repository: 111122223333.dkr.ecr.us-east-1.amazonaws.com/kestrel-agents
+  tag: d569c15
+serviceAccount:
+  roleArn: arn:aws:iam::111122223333:role/kestrel-dev-agents
+model:
+  provider: claude
+  effort: medium
+externalSecret:
+  enabled: true
+  remoteKey: arn:aws:secretsmanager:us-east-1:111122223333:secret:kestrel-dev/anthropic-api-key-abc123

@@ -1,0 +1,160 @@
+name: Infrastructure and deployment gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      plan_eks:
+        description: "Also run terraform plan against a real AWS account (needs the AWS_PLAN_ROLE_ARN and TF_STATE_BUCKET repository variables)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.17.2"
+  HELM_VERSION: "v4.3.2"
+  LAB7_REF: "d569c15"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  terraform:
+    name: Terraform fmt, validate and test (mocked AWS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - name: terraform test (mock provider, no credentials)
+        run: terraform test
+
+  policy:
+    name: Chart and infra policy tests, with negative controls
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: terraform -chdir=infra init -backend=false -input=false
+      - run: pip install -r requirements-dev.txt
+      - run: helm lint charts/kestrel-agents --strict
+      - run: pytest -v
+
+  kind:
+    name: Deploy to a kind cluster and gate it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out lab 7 at the pinned commit (the image and its eval gate)
+        uses: actions/checkout@v4
+        with:
+          repository: K11-Software-Solutions/shipping-agents-lab
+          ref: ${{ env.LAB7_REF }}
+          path: lab7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Build the image
+        run: docker build --build-arg BUILD_SHA=$LAB7_REF -t kestrel-agents:ci lab7
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kestrel
+      - name: Load the image into the cluster
+        run: kind load docker-image kestrel-agents:ci --name kestrel
+      - name: Install the chart
+        run: |
+          kubectl create namespace kestrel
+          helm install kestrel charts/kestrel-agents -f charts/values/kind.yaml --namespace kestrel --wait --timeout 3m
+          kubectl -n kestrel get pods -o wide
+      - name: Pods run as the expected non-root user with a read-only root filesystem
+        run: |
+          pod=$(kubectl -n kestrel get pod -l app.kubernetes.io/instance=kestrel -o jsonpath='{.items[0].metadata.name}')
+          uid=$(kubectl -n kestrel exec "$pod" -- id -u); echo "uid=$uid"; test "$uid" = "10001"
+          if kubectl -n kestrel exec "$pod" -- sh -c 'touch /app/x' 2>/dev/null; then echo "root filesystem is writable"; exit 1; fi
+          kubectl -n kestrel exec "$pod" -- sh -c 'touch /tmp/ok'
+      - name: Eval gate through the Kubernetes Service
+        run: |
+          kubectl -n kestrel port-forward svc/kestrel 8080:80 > /dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/readyz && break; sleep 1; done
+          pip install -q -r lab7/requirements-dev.txt
+          cd lab7 && python -m gates.eval_gate --url http://127.0.0.1:8080
+      - name: Rolling upgrade to a shadow rollout keeps serving
+        run: |
+          helm upgrade kestrel charts/kestrel-agents -f charts/values/kind.yaml --namespace kestrel \
+            --set rollout.candidate.effort=low --set rollout.shadowPercent=100 --wait --rollback-on-failure --timeout 3m
+          kubectl -n kestrel rollout status deploy/kestrel
+          pkill -f "port-forward" || true
+          kubectl -n kestrel port-forward svc/kestrel 8080:80 > /dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/readyz && break; sleep 1; done
+          curl -sf http://127.0.0.1:8080/version | grep -q '"shadow_percent":100'
+          cd lab7 && python -m gates.drive --url http://127.0.0.1:8080 --requests 30
+      - name: Promotion gate on the pods' logs
+        run: |
+          sleep 2
+          kubectl -n kestrel logs -l app.kubernetes.io/instance=kestrel --tail=-1 --prefix=false \
+            | (cd lab7 && python -m gates.promote --expect promote --min-samples 25 --max-latency-ratio 50)
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl -n kestrel describe pods || true
+          kubectl -n kestrel logs -l app.kubernetes.io/instance=kestrel --tail=100 || true
+
+  eks-plan:
+    name: terraform plan against AWS (manual, optional)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.plan_eks }}
+    needs: [terraform, policy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write          # GitHub OIDC to assume an AWS role: no AWS keys stored in GitHub
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the repository variables are set
+        run: |
+          test -n "${{ vars.AWS_PLAN_ROLE_ARN }}" || { echo "set the AWS_PLAN_ROLE_ARN repository variable"; exit 1; }
+          test -n "${{ vars.TF_STATE_BUCKET }}" || { echo "set the TF_STATE_BUCKET repository variable"; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - run: >
+          terraform init -input=false
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=kestrel/dev.tfstate"
+          -backend-config="region=us-east-1"
+          -backend-config="use_lockfile=true"
+      - run: terraform plan -input=false -var='admin_cidrs=["${{ vars.ADMIN_CIDR || '203.0.113.0/24' }}"]'

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kestrel.name" . }}
+  labels: {{- include "kestrel.labels" . | nindent 4 }}
+data:
+  PROVIDER: {{ .Values.model.provider | quote }}
+  MODEL: {{ .Values.model.name | quote }}
+  EFFORT: {{ .Values.model.effort | quote }}
+  BUILD_SHA: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
+  SHADOW_PERCENT: {{ .Values.rollout.shadowPercent | quote }}
+  CANDIDATE_PERCENT: {{ .Values.rollout.candidatePercent | quote }}
+  {{- with .Values.rollout.candidate.effort }}
+  CANDIDATE_EFFORT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.rollout.candidate.model }}
+  CANDIDATE_MODEL: {{ . | quote }}
+  {{- end }}

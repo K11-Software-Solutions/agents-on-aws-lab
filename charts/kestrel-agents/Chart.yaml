@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kestrel-agents
+description: The Kestrel PDLC agents service (lab 7's image) on Kubernetes, with IRSA, probes, rollout settings and hardening.
+type: application
+version: 1.0.0
+appVersion: "d569c15"

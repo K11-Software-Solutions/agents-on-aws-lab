@@ -1,0 +1,49 @@
+image:
+  repository: kestrel-agents          # the ECR repository URL from terraform output ecr_repository_url
+  tag: ""                             # defaults to the chart's appVersion; tags are immutable in ECR
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+serviceAccount:
+  name: kestrel-agents                # must match the IRSA trust policy (var.app_service_account)
+  roleArn: ""                         # terraform output app_role_arn; empty means no AWS access
+
+model:
+  provider: fake                      # fake | claude
+  name: claude-opus-5-5
+  effort: medium
+  # The API key comes from a Kubernetes Secret, never from values. In EKS, sync it from
+  # Secrets Manager with the External Secrets Operator (externalSecret below) or create it yourself.
+  apiKeySecret:
+    name: kestrel-anthropic-api-key
+    key: ANTHROPIC_API_KEY
+
+rollout:
+  candidate: {}                       # e.g. {effort: low} or {model: claude-sonnet-5-5}
+  shadowPercent: 0
+  candidatePercent: 0
+
+externalSecret:
+  enabled: false
+  secretStore: aws-secrets-manager    # a ClusterSecretStore that uses IRSA
+  remoteKey: ""                       # terraform output api_key_secret_arn
+
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {memory: 512Mi}
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true                       # ingress on 8080 only; egress to DNS and HTTPS only
+
+service:
+  port: 80

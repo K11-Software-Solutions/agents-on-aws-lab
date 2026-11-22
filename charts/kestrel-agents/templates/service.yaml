@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kestrel.name" . }}
+  labels: {{- include "kestrel.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "kestrel.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http

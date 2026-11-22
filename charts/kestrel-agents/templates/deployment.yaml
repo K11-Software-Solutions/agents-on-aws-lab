@@ -1,0 +1,90 @@
+{{- if and (eq .Values.model.provider "claude") (not .Values.model.apiKeySecret.name) }}
+{{- fail "model.provider=claude needs model.apiKeySecret.name" }}
+{{- end }}
+{{- if and (gt (int .Values.rollout.shadowPercent) 0) (gt (int .Values.rollout.candidatePercent) 0) }}
+{{- fail "run a shadow or a canary, not both: set rollout.shadowPercent or rollout.candidatePercent, not both" }}
+{{- end }}
+{{- if and (or (gt (int .Values.rollout.shadowPercent) 0) (gt (int .Values.rollout.candidatePercent) 0)) (not .Values.rollout.candidate) }}
+{{- fail "a rollout percentage is set but rollout.candidate is empty" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kestrel.name" . }}
+  labels: {{- include "kestrel.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: {{- include "kestrel.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "kestrel.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: {{ if .Values.serviceAccount.roleArn }}true{{ else }}false{{ end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {{- include "kestrel.selector" . | nindent 14 }}
+      containers:
+        - name: agents
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: {{ include "kestrel.name" . }}
+          {{- if eq .Values.model.provider "claude" }}
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.model.apiKeySecret.name }}
+                  key: {{ .Values.model.apiKeySecret.key }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            failureThreshold: 2
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
